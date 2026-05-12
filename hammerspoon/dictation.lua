@@ -95,7 +95,8 @@ end
 -- ---------- Paste flow ----------
 local function paste_with_restore(text)
     set_state("pasting")
-    M.saved_clipboard = hs.pasteboard.getContents()
+    -- Save the full clipboard (all types: string, RTF, image, file references) via readAllData.
+    M.saved_clipboard = hs.pasteboard.readAllData(nil)
     M.saved_changeCount = hs.pasteboard.changeCount()
 
     -- Send Escape to collapse any active IME composition buffer.
@@ -111,7 +112,7 @@ local function paste_with_restore(text)
         local elapsed_s = (hs.timer.absoluteTime() - started_at) / 1e9
         if hs.pasteboard.changeCount() > (M.saved_changeCount + 1) or elapsed_s > 1.0 then
             if M.saved_clipboard then
-                hs.pasteboard.setContents(M.saved_clipboard)
+                hs.pasteboard.writeAllData(nil, M.saved_clipboard)
             end
             set_state("idle")
             return
