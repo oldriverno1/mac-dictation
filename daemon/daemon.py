@@ -13,12 +13,21 @@ import signal
 import sys
 import threading
 
+import numpy as np
+
 from daemon.asr import Asr
 from daemon.audio import Recorder
 from daemon.ipc import IpcServer
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("DICTATION_PORT", "47823"))
+
+# Energy gate: when the captured audio's RMS amplitude is below this threshold,
+# treat the recording as silence and return empty text without invoking ASR.
+# Qwen3-ASR is prompt-conditioned and hallucinates the context prompt back on
+# silent input. Float32 mic audio sits at ~0.001 RMS in a quiet room; quiet
+# speech is ~0.02; normal speech 0.05–0.2. 0.005 cleanly separates the two.
+SILENCE_RMS_THRESHOLD = 0.005
 
 
 class DaemonHandler:
@@ -58,6 +67,14 @@ class DaemonHandler:
                 self.recorder = None
                 return {"ok": False, "error": f"audio_stop: {e}"}
             self.recorder = None
+
+        # Skip ASR on silent audio — prevents Qwen3-ASR from echoing the context prompt.
+        if len(audio) > 0:
+            rms = float(np.sqrt(np.mean(audio.astype(np.float32) ** 2)))
+            if rms < SILENCE_RMS_THRESHOLD:
+                print(f"[daemon] silent audio (rms={rms:.4f}), skipping ASR", flush=True)
+                return {"ok": True, "text": "", "duration_ms": 0, "truncated": truncated}
+
         try:
             text, duration_ms = self.asr.transcribe(audio, language=language, context=context)
         except Exception as e:
