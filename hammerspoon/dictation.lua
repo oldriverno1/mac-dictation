@@ -1,5 +1,23 @@
 -- Dictation: hold Right Command anywhere, speak, release, transcript pastes at cursor.
 
+-- Enable AppleScript so we can introspect from the shell when debugging.
+if hs.allowAppleScript then hs.allowAppleScript(true) end
+
+-- File-based log so issues can be diagnosed without opening Hammerspoon Console.
+local LOG_PATH = os.getenv("HOME") .. "/Library/Logs/dictation-hammerspoon.log"
+local log = hs.logger.new("dictation", "info")
+local function flog(fmt, ...)
+    local msg = string.format(fmt, ...)
+    log.i(msg)
+    local f = io.open(LOG_PATH, "a")
+    if f then
+        f:write(os.date("%Y-%m-%d %H:%M:%S") .. " " .. msg .. "\n")
+        f:close()
+    end
+end
+
+flog("dictation.lua loaded; accessibility=%s", tostring(hs.accessibilityState()))
+
 local M = {}
 
 local DAEMON = "http://127.0.0.1:47823"
@@ -184,8 +202,7 @@ function M.start()
     -- the left Command is simultaneously held.
     M.tap = hs.eventtap.new({hs.eventtap.event.types.flagsChanged}, function(ev)
         if ev:getKeyCode() ~= RIGHT_CMD_KEYCODE then return false end
-        local raw = ev:rawFlags()
-        local right_cmd_down = (raw & RIGHT_CMD_MASK) ~= 0
+        local right_cmd_down = (ev:rawFlags() & RIGHT_CMD_MASK) ~= 0
         if right_cmd_down then
             on_right_cmd_down()
         else
@@ -194,6 +211,7 @@ function M.start()
         return false
     end)
     M.tap:start()
+    flog("started, right-cmd listener active; tap:isEnabled=%s", tostring(M.tap:isEnabled()))
     print("[dictation] started, right-cmd listener active")
 end
 

@@ -2,7 +2,9 @@
 
 Personal push-to-talk voice dictation for macOS. Hold **Right Command**, speak (English or Traditional Chinese), release — text is pasted at the cursor. All inference runs locally on Apple Silicon via `mlx-qwen3-asr`.
 
-Design doc: `../docs/specs/2026-05-12-mac-voice-dictation-design.md`.
+Design doc: [`docs/design.md`](docs/design.md). Implementation plan: [`docs/implementation-plan.md`](docs/implementation-plan.md).
+
+The plist and several paths in the install script are hardcoded for the original author's home directory (`/Users/Lars/...`). If you fork this for your own use, search-and-replace those before installing.
 
 ## Prerequisites
 
@@ -54,4 +56,4 @@ The daemon will preload the model (~10s) the first time it starts. Subsequent st
 
 ## Architecture
 
-See spec doc.
+See [`docs/design.md`](docs/design.md).
