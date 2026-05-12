@@ -6,6 +6,7 @@ dependencies = [
     "mlx-qwen3-asr>=0.1.0",
     "sounddevice>=0.5.0",
     "numpy>=2.0.0",
+    "opencc>=1.1.0",
 ]
 
 [project.optional-dependencies]

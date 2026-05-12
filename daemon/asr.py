@@ -62,6 +62,7 @@ class Asr:
     def __init__(self, model_id: str = "Qwen/Qwen3-ASR-1.7B") -> None:
         self.model_id = model_id
         self._session: Any | None = None
+        self._s2tw: Any | None = None  # OpenCC converter (Simplified→Traditional-Taiwan w/ phrases)
         self._queue: queue.Queue[_TranscribeRequest | None] = queue.Queue()
         self._worker: threading.Thread | None = None
         self._loaded = threading.Event()
@@ -110,9 +111,15 @@ class Asr:
     def _worker_loop(self) -> None:
         try:
             import mlx_qwen3_asr  # noqa: PLC0415 — intentional lazy import
+            import opencc  # noqa: PLC0415
 
             t0 = time.monotonic()
             self._session = mlx_qwen3_asr.Session(self.model_id)
+            # Qwen3-ASR is trained mostly on Simplified Chinese and occasionally
+            # outputs simplified characters even with zh context. Post-process
+            # everything through s2twp (Simplified → Traditional Taiwan with
+            # phrase substitution). Idempotent on English / already-Traditional.
+            self._s2tw = opencc.OpenCC("s2twp")
             elapsed_ms = int((time.monotonic() - t0) * 1000)
             print(f"[asr] model loaded in {elapsed_ms} ms", flush=True)
         except BaseException as e:  # propagate any failure
@@ -133,7 +140,10 @@ class Asr:
                 t0 = time.monotonic()
                 result = self._session.transcribe(req.audio, **session_kwargs)
                 duration_ms = int((time.monotonic() - t0) * 1000)
-                req.result = (result.text.strip(), duration_ms)
+                text = result.text.strip()
+                if self._s2tw is not None:
+                    text = self._s2tw.convert(text)
+                req.result = (text, duration_ms)
             except BaseException as e:
                 req.error = e
             finally:
