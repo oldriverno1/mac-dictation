@@ -76,19 +76,33 @@ local function resolve_lang(ime)
 end
 
 -- ---------- IPC (HTTP to daemon) ----------
+local TIMEOUT_SECONDS = 15
+
 local function post(path, body, on_done)
     local req_body = hs.json.encode(body)
+    local finished = false
+
+    local function complete(resp)
+        if finished then return end
+        finished = true
+        on_done(resp)
+    end
+
+    hs.timer.doAfter(TIMEOUT_SECONDS, function()
+        complete({ok = false, error = "timeout: daemon did not respond within " .. TIMEOUT_SECONDS .. "s"})
+    end)
+
     hs.http.asyncPost(DAEMON .. path, req_body, HEADERS, function(status, resp_body, _resp_headers)
         if status < 0 then
-            on_done({ok = false, error = "daemon_unreachable: " .. tostring(status)})
+            complete({ok = false, error = "daemon_unreachable: " .. tostring(status)})
             return
         end
         local ok_decode, resp = pcall(hs.json.decode, resp_body or "{}")
         if not ok_decode or type(resp) ~= "table" then
-            on_done({ok = false, error = "bad_response: " .. tostring(resp_body)})
+            complete({ok = false, error = "bad_response: " .. tostring(resp_body)})
             return
         end
-        on_done(resp)
+        complete(resp)
     end)
 end
 
