@@ -50,13 +50,14 @@ class DaemonHandler:
             if self.recorder is None:
                 return {"ok": False, "error": "not_recording"}
             recorder = self.recorder
-            self.recorder = None
             language = self.language
             context = self.context
-        try:
-            audio, truncated = recorder.stop()
-        except Exception as e:
-            return {"ok": False, "error": f"audio_stop: {e}"}
+            try:
+                audio, truncated = recorder.stop()
+            except Exception as e:
+                self.recorder = None
+                return {"ok": False, "error": f"audio_stop: {e}"}
+            self.recorder = None
         try:
             text, duration_ms = self.asr.transcribe(audio, language=language, context=context)
         except Exception as e:
