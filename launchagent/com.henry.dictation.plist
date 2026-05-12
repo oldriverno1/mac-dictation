@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.henry.dictation</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/Lars/llm/dictation/.venv-dictation/bin/python</string>
+        <string>-m</string>
+        <string>daemon.daemon</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/Lars/llm/dictation</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/Lars/Library/Logs/dictation.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/Lars/Library/Logs/dictation.err</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>
