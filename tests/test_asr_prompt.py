@@ -15,5 +15,5 @@ def test_chinese_prompt():
 
 def test_auto_omits_language_hint():
     kwargs = build_prompt_kwargs("auto", "")
-    # 'auto' means let the model decide → don't pass language=
-    assert "language" not in kwargs or kwargs["language"] is None
+    # 'auto' means let the model decide → the "language" key must be absent entirely.
+    assert "language" not in kwargs
