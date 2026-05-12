@@ -32,9 +32,15 @@ if [ ! -f "$INIT_LUA" ] || ! grep -qF "$LOAD_LINE" "$INIT_LUA"; then
     echo "Appended dictation loader to $INIT_LUA"
 fi
 
-# 4. Load the LaunchAgent
-launchctl load "$LAUNCH_AGENT_DIR/$PLIST_NAME"
-echo "LaunchAgent loaded. Daemon starting (model load takes ~10s)."
+# 4. Load + kickstart the LaunchAgent.
+# `launchctl load` alone often does NOT auto-spawn on recent macOS even with RunAtLoad=true;
+# `kickstart` forces the spawn. Idempotent if already running.
+launchctl load "$LAUNCH_AGENT_DIR/$PLIST_NAME" 2>/dev/null || true
+launchctl kickstart -p "gui/$(id -u)/com.henry.dictation" >/dev/null
+echo "LaunchAgent loaded and kickstarted."
+echo "  - first run: model downloads ~4GB and loads (several minutes)"
+echo "  - subsequent runs: model loads from cache (~1-2s)"
+echo "  - daemon logs: ~/Library/Logs/dictation.log (stdout), dictation.err (stderr)"
 
 # 5. Reload Hammerspoon if it's running
 if pgrep -x Hammerspoon >/dev/null; then
