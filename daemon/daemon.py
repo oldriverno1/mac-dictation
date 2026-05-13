@@ -30,6 +30,18 @@ PORT = int(os.environ.get("DICTATION_PORT", "47823"))
 SILENCE_RMS_THRESHOLD = 0.005
 
 
+def _self_terminate_after(delay_seconds: float, reason: str) -> None:
+    # PortAudio caches AudioUnit state from Pa_Initialize and cannot recover when
+    # coreaudiod restarts under us (macOS jetsam-recycles long-idle daemons).
+    # Returning an error response leaves the process alive, so launchd's KeepAlive
+    # never fires. Exiting forces a respawn with a fresh PortAudio. The delay lets
+    # the in-flight HTTP response flush back to Hammerspoon before we die.
+    def _exit() -> None:
+        print(f"[daemon] self-terminating for restart: {reason}", flush=True)
+        os._exit(1)
+    threading.Timer(delay_seconds, _exit).start()
+
+
 class DaemonHandler:
     """Glues IPC requests to recorder + ASR. One active session at a time."""
 
@@ -51,6 +63,7 @@ class DaemonHandler:
                 self.recorder.start()
             except Exception as e:
                 self.recorder = None
+                _self_terminate_after(0.5, f"mic_error: {e}")
                 return {"ok": False, "error": f"mic_error: {e}"}
             return {"ok": True, "session": "active"}
 
@@ -65,6 +78,7 @@ class DaemonHandler:
                 audio, truncated = recorder.stop()
             except Exception as e:
                 self.recorder = None
+                _self_terminate_after(0.5, f"audio_stop: {e}")
                 return {"ok": False, "error": f"audio_stop: {e}"}
             self.recorder = None
 
