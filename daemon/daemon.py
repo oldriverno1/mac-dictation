@@ -12,6 +12,7 @@ import os
 import signal
 import sys
 import threading
+from contextlib import contextmanager
 
 import numpy as np
 
@@ -42,6 +43,25 @@ def _self_terminate_after(delay_seconds: float, reason: str) -> None:
     threading.Timer(delay_seconds, _exit).start()
 
 
+@contextmanager
+def _hang_watchdog(seconds: float, label: str):
+    # Exception-based recovery only fires when PortAudio raises. On macOS,
+    # Pa_StopStream/Pa_CloseStream can instead *deadlock* silently after an
+    # audio topology change, holding self._lock forever and starving every
+    # subsequent /start and /stop. This watchdog hard-exits the process if a
+    # handler call doesn't return within `seconds`, so KeepAlive can respawn.
+    def trip() -> None:
+        print(f"[daemon] watchdog tripped: {label} hung >{seconds}s — self-terminating", flush=True)
+        os._exit(1)
+    timer = threading.Timer(seconds, trip)
+    timer.daemon = True
+    timer.start()
+    try:
+        yield
+    finally:
+        timer.cancel()
+
+
 class DaemonHandler:
     """Glues IPC requests to recorder + ASR. One active session at a time."""
 
@@ -53,47 +73,49 @@ class DaemonHandler:
         self._lock = threading.Lock()
 
     def on_start(self, msg: dict) -> dict:
-        with self._lock:
-            if self.recorder is not None:
-                return {"ok": False, "error": "already_recording"}
-            self.language = msg.get("language", "auto")
-            self.context = msg.get("context", "")
-            self.recorder = Recorder()
-            try:
-                self.recorder.start()
-            except Exception as e:
-                self.recorder = None
-                _self_terminate_after(0.5, f"mic_error: {e}")
-                return {"ok": False, "error": f"mic_error: {e}"}
-            return {"ok": True, "session": "active"}
+        with _hang_watchdog(20.0, "on_start"):
+            with self._lock:
+                if self.recorder is not None:
+                    return {"ok": False, "error": "already_recording"}
+                self.language = msg.get("language", "auto")
+                self.context = msg.get("context", "")
+                self.recorder = Recorder()
+                try:
+                    self.recorder.start()
+                except Exception as e:
+                    self.recorder = None
+                    _self_terminate_after(0.5, f"mic_error: {e}")
+                    return {"ok": False, "error": f"mic_error: {e}"}
+                return {"ok": True, "session": "active"}
 
     def on_stop(self, msg: dict) -> dict:  # noqa: ARG002
-        with self._lock:
-            if self.recorder is None:
-                return {"ok": False, "error": "not_recording"}
-            recorder = self.recorder
-            language = self.language
-            context = self.context
-            try:
-                audio, truncated = recorder.stop()
-            except Exception as e:
+        with _hang_watchdog(20.0, "on_stop"):
+            with self._lock:
+                if self.recorder is None:
+                    return {"ok": False, "error": "not_recording"}
+                recorder = self.recorder
+                language = self.language
+                context = self.context
+                try:
+                    audio, truncated = recorder.stop()
+                except Exception as e:
+                    self.recorder = None
+                    _self_terminate_after(0.5, f"audio_stop: {e}")
+                    return {"ok": False, "error": f"audio_stop: {e}"}
                 self.recorder = None
-                _self_terminate_after(0.5, f"audio_stop: {e}")
-                return {"ok": False, "error": f"audio_stop: {e}"}
-            self.recorder = None
 
-        # Skip ASR on silent audio — prevents Qwen3-ASR from echoing the context prompt.
-        if len(audio) > 0:
-            rms = float(np.sqrt(np.mean(audio.astype(np.float32) ** 2)))
-            if rms < SILENCE_RMS_THRESHOLD:
-                print(f"[daemon] silent audio (rms={rms:.4f}), skipping ASR", flush=True)
-                return {"ok": True, "text": "", "duration_ms": 0, "truncated": truncated}
+            # Skip ASR on silent audio — prevents Qwen3-ASR from echoing the context prompt.
+            if len(audio) > 0:
+                rms = float(np.sqrt(np.mean(audio.astype(np.float32) ** 2)))
+                if rms < SILENCE_RMS_THRESHOLD:
+                    print(f"[daemon] silent audio (rms={rms:.4f}), skipping ASR", flush=True)
+                    return {"ok": True, "text": "", "duration_ms": 0, "truncated": truncated}
 
-        try:
-            text, duration_ms = self.asr.transcribe(audio, language=language, context=context)
-        except Exception as e:
-            return {"ok": False, "error": f"asr_error: {e}"}
-        return {"ok": True, "text": text, "duration_ms": duration_ms, "truncated": truncated}
+            try:
+                text, duration_ms = self.asr.transcribe(audio, language=language, context=context)
+            except Exception as e:
+                return {"ok": False, "error": f"asr_error: {e}"}
+            return {"ok": True, "text": text, "duration_ms": duration_ms, "truncated": truncated}
 
 
 def main() -> None:
